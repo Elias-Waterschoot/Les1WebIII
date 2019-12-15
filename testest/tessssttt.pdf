@@ -1,0 +1,363 @@
+# Mike2
+
+## Omschrijving
+
+Een member server in het domein red.local. Deze server doet dienst als Intranet-en 
+CMS-server (Sharepoint) die enkel toegankelijk is voor interne systemen uit hetdomein red.local.
+Het database gedeelte van deze Sharepoint server staat eveneens op de databaseserver november2.
+Als inhoud voor deze CMS server voorzie je alle Windows documentatie van dit project.
+
+
+## Overzicht scripts
+
+- `toevoegen domein.ps1`
+  In dit script worden de basisconfiguraties in orde gebracht
+    - IP instellingen
+    - configure dns
+    - Uitzetten firewall
+    - veranderen computernaam
+    - joined domein red.local
+    
+```
+start-transcript "C:\ScriptLogs\1.txt"
+
+# remove script restrictions
+
+ Set-ExecutionPolicy Unrestricted -force
+
+# Auto run script prerquisites na reboot
+
+Set-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name ResumeScript `
+                -Value 'C:\Windows\system32\WindowsPowerShell\v1.0\Powershell.exe -executionpolicy bypass -file "Z:\scripts voor mike2\prerequisites.ps1"'
+
+Write-Output "add password credentials"
+
+$password = ConvertTo-SecureString "Admin2019" -AsPlainText -Force
+$Cred = New-Object System.Management.Automation.PSCredential ("Administrator", $password)
+
+$Username = $Cred.GetNetworkCredential().UserName
+$Password = $Cred.GetNetworkCredential().Password
+$Uservalue= "red\$Username"
+
+# instellen velden voor automatisch in te loggen na opstarten
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name DefaultUserName -Value $Uservalue
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name DefaultPassword -Value $Password
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name AutoAdminLogon -Value 1
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name ForceAutoLogon -Value 1
+
+# configure hostonlyadapter
+
+Write-Output "configure hostonlyadapter"
+New-NetIPAddress -IPAddress 172.18.1.3 -PrefixLength 26 -InterfaceIndex (Get-NetAdapter -Name "Ethernet 2").InterfaceIndex
+
+
+#Disable Firewall
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+
+
+# configure dns 
+Write-Output "configure dns"
+Set-DnsClientServerAddress -interfaceAlias "Ethernet 2" -serveraddresses 172.18.1.66
+
+Write-host "Waiting 10 seconds before continuing"
+start-sleep -s 10
+
+
+# change computername met adds credentials
+
+Write-Output "set computername to mike2 and add to domain red"
+
+add-Computer -DomainName red.local -ComputerName "$env:computername" -newname mike2 -DomainCredential $Cred
+
+
+
+stop-transcript
+
+restart-computer
+```
+    
+    
+- `prerequisites.ps1`
+  Installatie van de prerequisites
+  
+```
+start-transcript "C:\ScriptLogs\2.txt"
+# Auto run script prerquisites na reboot
+
+Set-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name ResumeScript `
+                -Value 'C:\Windows\system32\WindowsPowerShell\v1.0\Powershell.exe -executionpolicy bypass -file "Z:\scripts voor mike2\SPsetup.ps1"'
+
+
+
+
+
+Write-host "Waiting 5 seconds before continuing"
+start-sleep -s 5
+Write-Output "installing prerequisites"
+# install prerequisites voor sharepoint moet access tot internet hebben  
+# dit hangt af van waar de shared folder is heeft confirmatie nodig van uac
+start-process Z:\sharepoint\PrerequisiteInstaller.exe /unattended -wait
+
+# //install sql internet nodig
+# \\VBOXSVR\windows_school_vm\SQLServer2016-SSEI-Eval.exe  /Iacceptsqlserverlicenseterms /q
+
+Write-host "Waiting 5 seconds before continuing"
+start-sleep -s 5
+
+Restart-Computer
+
+
+
+
+
+stop-transcript
+```
+  
+- `roles.ps1`
+  Installatie van rollen indien nodig
+  
+```
+Write-Host "Start configuring roles..."
+Write-Host "Importing Modules..."  
+Import-Module Servermanager
+
+Install-WindowsFeature Net-Framework-Core -source f:\sources\sxs
+Install-WindowsFeature NET-HTTP-Activation -source f:\sources\sxs
+Install-WindowsFeature NET-Non-HTTP-Activ -source f:\sources\sxs
+Install-WindowsFeature NET-WCF-HTTP-Activation45 
+
+Install-WindowsFeature Web-Server -IncludeAllSubFeature -IncludeManagementTools -source f:\sources\sxs
+
+Install-WindowsFeature Web-Common-Http 
+
+Install-WindowsFeature Web-Static-Content 
+
+Install-WindowsFeature Web-Default-Doc 
+
+Install-WindowsFeature Web-Dir-Browsing 
+
+Install-WindowsFeature Web-Http-Errors
+
+Install-WindowsFeature Web-App-Dev 
+
+Install-WindowsFeature Web-Asp-Net -source f:\sources\sxs
+
+Install-WindowsFeature Web-ISAPI-Ext 
+
+Install-WindowsFeature Web-ISAPI-Filter
+
+Install-WindowsFeature Web-Health 
+
+Install-WindowsFeature Web-Http-Logging 
+
+Install-WindowsFeature Web-Log-Libraries
+
+Install-WindowsFeature Web-Request-Monitor
+
+Install-WindowsFeature Web-Http-Tracing 
+
+Install-WindowsFeature Web-Security 
+
+Install-WindowsFeature Web-Basic-Auth 
+
+Install-WindowsFeature Web-Filtering 
+
+Install-WindowsFeature Web-Digest-Auth
+
+Install-WindowsFeature Web-Performance
+
+Install-WindowsFeature Web-Stat-Compression
+
+Install-WindowsFeature Web-Dyn-Compression 
+
+Install-WindowsFeature Web-Mgmt-Tools 
+
+Install-WindowsFeature Web-Mgmt-Console 
+
+Install-WindowsFeature Web-Mgmt-Compat 
+
+Install-WindowsFeature Web-Metabase 
+
+Install-WindowsFeature Was -IncludeAllSubFeature -source f:\sources\sxs
+
+Install-WindowsFeature Web-Lgcy-Scripting 
+
+Install-WindowsFeature Windows-Identity-Foundation 
+
+Install-WindowsFeature Server-Media-Foundation 
+
+Install-WindowsFeature Xps-Viewer 
+
+Install-WindowsFeature BITS-IIS-Ext 
+
+Install-WindowsFeature WinRM-IIS-Ext 
+
+Install-WindowsFeature Web-Scripting-Tools
+
+Install-WindowsFeature Web-WMI
+
+Install-WindowsFeature Web-IP-Security
+
+Install-WindowsFeature Web-url-Auth
+
+Install-WindowsFeature Web-Cert-Auth
+
+Install-WindowsFeature Web-Client-Auth
+```
+  
+- `SPsetup.ps1`
+  De SharePoint setup, deze maakt gebruik van een xml file: ´SPinstallation.xml´
+  
+```
+Start-Process "Z:\sharepoint\setup.exe" -ArgumentList "/config `"$PSScriptRoot\SPinstallation.xml`"" -WindowStyle Minimized -wait
+
+Add-PSSnapIn Microsoft.SharePoint.PowerShell
+
+& "Z:\scripts voor mike2\SPfarm.ps1"
+```
+  
+- `SPinstallation.xml`
+  XML file voor de setup te automatiseren, zodat bv de product key geautomatiseerd wordt ingegeven.
+  
+```
+<!-- http://technet.microsoft.com/en-us/library/cc287749.aspx -->
+
+<Configuration>  
+  <!-- Package ID for SharePoint Foundation -->
+  <Package Id="sts">
+    <Setting Id="LAUNCHEDFROMSETUPSTS" Value="Yes"/>
+  </Package>
+
+  <!-- Package ID for SharePoint Server -->
+  <Package Id="spswfe">
+    <Setting Id="SETUPCALLED" Value="1"/>
+    <!-- 0 Std | 1 Ent -->
+    <Setting Id="OFFICESERVERPREMIUM" Value="1" />
+  </Package>
+
+  <PIDKEY Value="M692G-8N2JP-GG8B2-2W2P7-YY7J6"/>
+  <Setting Id="SERVERROLE" Value="APPLICATION"/>
+  <Setting Id="USINGUIINSTALLMODE" Value="0"/>
+  <Setting Id="SETUPTYPE" Value="CLEAN_INSTALL"/>
+  <Setting Id="SETUP_REBOOT" Value="Never"/>
+  <Setting Id="AllowWindowsClientInstall" Value="True"/>
+  <ARP ARPCOMMENTS="" ARPCONTACT="" />
+  <Display Level="basic" CompletionNotice="No" AcceptEula="Yes"/>
+  <Logging Type="verbose" Path="%temp%" Template="SharePoint Server Setup(*).log"/>
+</Configuration>
+```
+  
+- `SPFarm.ps1`
+  Opzetten van de server farm
+    - creating the configuration database
+    - install help collections
+    - initialize security
+    - install services
+    - register features
+    - install application content
+    - create Central Administration site
+    
+```
+Write-Host " - Sharepoint PowerShell cmdlets..."
+If ((Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"})-eq $null)
+{
+    Add-PsSnapin Microsoft.SharePoint.PowerShell | Out-Null
+}
+Start-SPAssignment -Global | Out-Null
+
+$password = ConvertTo-SecureString "Admin2019" -AsPlainText -Force
+
+$farmcredentials = (New-Object System.Management.Automation.PSCredential ("RED" + "\" + "Administrator"),($password))
+
+Write-Output "Creating the configuration database"
+New-SPConfigurationDatabase `
+-DatabaseServer "NOVEMBER2" `
+-DatabaseName "SharePoint_Config" `
+-AdministrationContentDatabaseName "SP2019_Content_CentralAdministration" `
+-Passphrase  (ConvertTo-SecureString "Admin2019" -AsPlainText -force) `
+-FarmCredentials $farmcredentials `
+-localserverrole "SingleServerFarm"
+
+# config wizard tasks
+ 
+Write-Output "Install Help Collections"
+Install-SPHelpCollection -All
+ 
+Write-Output "Initialize security"
+Initialize-SPResourceSecurity
+ 
+Write-Output "Install services"
+Install-SPService
+ 
+Write-Output "Register features"
+Install-SPFeature -AllExistingFeatures
+ 
+Write-Output "Install Application Content"
+Install-SPApplicationConten
+
+
+Write-Output "Create the Central Administration site"
+New-SPCentralAdministration `
+-Port 8080 `
+-WindowsAuthProvider "NTLM"
+```
+    
+- `SPWebApp.ps1`
+  Aanmaken van WebApplicatie en Site Collection in SharePoint
+    - creating Wepapplication
+    - creating site collection
+    
+```
+#Script voor het aanmaken van een webapplicatie in SharePoint 2019
+
+#Add Snap-in Microsoft.SharePoint.PowerShell if not already loaded, continue if it already has been loaded
+Add-PsSnapin "Microsoft.SharePoint.PowerShell" -EA 0
+ 
+#Variables
+
+$AppPoolAccount = "RED\Administrator"             #Application Pool domain account
+$ApplicationPoolName ="SharePoint - 8080"         #Application Pool
+$ContentDatabase = "SharePoint_ContentDB"         #Content DB
+$DatabaseServer = "NOVEMBER2"                     #Alias of your DB Server
+$Url = "http://mike2:8080/"                       #The name of your new Web Application
+$Name = "Mike2 - Documenten"                      #The IIS host header
+$Description = "SharePoint 2019 Publishing Site"
+$SiteCollectionTemplate = 'STS#0'                 #Publishing site template
+
+#Aanmaken SharePoint web applicatie
+Write-Output "Creating New-SPWebApplication..."
+
+New-SPWebApplication -ApplicationPool $ApplicationPoolName `
+                     -ApplicationPoolAccount (Get-SPManagedAccount $AppPoolAccount) `
+                     -Name $Description `
+                     -AuthenticationProvider (New-SPAuthenticationProvider -UseWindowsIntegratedAuthentication) `
+                     -DatabaseName $ContentDatabase `
+                     -DatabaseServer $DatabaseServer `
+                     -Port 8080 `
+                     -URL $Url
+
+#Aanmaken SharePoint site collection
+Write-Output "Creating New-SPSite..."
+
+New-SPSite -Url $Url `
+           -Name $Name `
+           -Description $Description `
+           -OwnerAlias $AppPoolAccount `
+           -Template $SiteCollectionTemplate
+
+           
+#set portal super accounts
+$w = Get-SPWebApplication $Url
+$w.Properties["portalsuperuseraccount"] = $AppPoolAccount
+$w.Properties["portalsuperreaderaccount"] = $AppPoolAccount
+$w.Update()
+```
+
+Uiteindelijk kom je dan op de Mike2 SharePoint webapplicatie: `http://mike2:8080`
+
+![alt text](http://github.com/HoGentTIN/p3ops-1920-red/blob/master/Servers/Mike2/Documentatie/sharepointdoc2.PNG/to/img.png)
+
+
+
+    
+    
